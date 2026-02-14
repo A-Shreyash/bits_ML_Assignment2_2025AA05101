@@ -132,7 +132,7 @@ if not os.path.exists("model/scaler.pkl"):
     st.stop()
 scaler = joblib.load("model/scaler.pkl")
 
-# Load Dataset
+# Load Default Dataset
 @st.cache_data
 def load_dataset():
     return pd.read_csv("Loan_approval_data_2025.csv")
@@ -140,44 +140,77 @@ def load_dataset():
 df = load_dataset()
 TARGET_COL = "loan_status"
 
-# Preprocessing
-df.drop(columns=["customer_id"], inplace=True, errors="ignore")
-categorical_cols = ["occupation_status", "product_type", "loan_intent"]
-df = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
+# Preprocessing Function
+def preprocess_data(data):
+    data = data.copy()
+    data.drop(columns=["customer_id"], inplace=True, errors="ignore")
+    categorical_cols = ["occupation_status", "product_type", "loan_intent"]
+    data = pd.get_dummies(data, columns=categorical_cols, drop_first=True)
+    return data
+
+df = preprocess_data(df)
 X = df.drop(TARGET_COL, axis=1)
 y = df[TARGET_COL]
 
-# Train-Test Split
+# Train-Test Split (Default)
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
 X_test = X_test.reindex(columns=X_train.columns, fill_value=0)
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["📊 Model Evaluation", "🔍 Model Comparison", "📈 Data Exploration"])
+tab1, tab2, tab3, tab4 = st.tabs(["📤 Upload Test Data", "📊 Model Evaluation", "🔍 Model Comparison", "📈 Data Exploration"])
+
+# Tab 0: Upload Test Data
+with tab1:
+    st.subheader("Upload Test Data (CSV)")
+    st.markdown("Upload a CSV file containing test data for evaluation. The file should have the same structure as the training data (features + target column 'loan_status'). Due to Streamlit free tier limits, only test data is supported.")
+    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+    if uploaded_file is not None:
+        test_df = pd.read_csv(uploaded_file)
+        test_df = preprocess_data(test_df)
+        if TARGET_COL not in test_df.columns:
+            st.error("Uploaded CSV must contain the target column 'loan_status'.")
+            use_uploaded = False
+        else:
+            X_test_uploaded = test_df.drop(TARGET_COL, axis=1)
+            y_test_uploaded = test_df[TARGET_COL]
+            X_test_uploaded = X_test_uploaded.reindex(columns=X_train.columns, fill_value=0)
+            st.success("Test data uploaded and processed successfully!")
+            st.write(f"Uploaded test data shape: {test_df.shape}")
+            # Use uploaded data for evaluation
+            use_uploaded = True
+    else:
+        use_uploaded = False
 
 # Tab 1: Model Evaluation
-with tab1:
+with tab2:
     st.subheader("Select a Model and View Its Performance")
     selected_model_name = st.selectbox("Choose a Model", list(models.keys()), key="eval_model")
     model = models[selected_model_name]
     
-    if selected_model_name in ["Logistic Regression", "KNN"]:
-        X_test_final = scaler.transform(X_test)
+    # Use uploaded test data if available, else default
+    if use_uploaded:
+        X_test_final = X_test_uploaded
+        y_test_final = y_test_uploaded
     else:
         X_test_final = X_test
+        y_test_final = y_test
+    
+    if selected_model_name in ["Logistic Regression", "KNN"]:
+        X_test_final = scaler.transform(X_test_final)
     
     y_pred = model.predict(X_test_final)
-    acc = accuracy_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred, zero_division=0)
-    recall = recall_score(y_test, y_pred, zero_division=0)
-    f1 = f1_score(y_test, y_pred, zero_division=0)
-    mcc = matthews_corrcoef(y_test, y_pred)
+    acc = accuracy_score(y_test_final, y_pred)
+    precision = precision_score(y_test_final, y_pred, zero_division=0)
+    recall = recall_score(y_test_final, y_pred, zero_division=0)
+    f1 = f1_score(y_test_final, y_pred, zero_division=0)
+    mcc = matthews_corrcoef(y_test_final, y_pred)
     
     # AUC Score (only if model supports predict_proba)
     if hasattr(model, "predict_proba"):
         y_pred_proba = model.predict_proba(X_test_final)[:, 1]
-        auc = roc_auc_score(y_test, y_pred_proba)
+        auc = roc_auc_score(y_test_final, y_pred_proba)
     else:
         auc = "N/A"
     
@@ -197,7 +230,7 @@ with tab1:
         st.markdown(f'<div class="metric-card"><h3>MCC Score</h3><p>{mcc:.3f}</p></div>', unsafe_allow_html=True)
     
     st.markdown("### Confusion Matrix")
-    cm = confusion_matrix(y_test, y_pred)
+    cm = confusion_matrix(y_test_final, y_pred)
     fig, ax = plt.subplots(figsize=(3, 2.5))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Oranges", ax=ax, cbar=False)
     ax.set_xlabel("Predicted")
@@ -208,25 +241,33 @@ with tab1:
         st.pyplot(fig)
 
 # Tab 2: Model Comparison
-with tab2:
+with tab3:
     st.subheader("Compare All Models Side-by-Side")
+    # Use uploaded test data if available, else default
+    if use_uploaded:
+        X_test_comp = X_test_uploaded
+        y_test_comp = y_test_uploaded
+    else:
+        X_test_comp = X_test
+        y_test_comp = y_test
+    
     results = []
     for name, mdl in models.items():
         if name in ["Logistic Regression", "KNN"]:
-            X_test_scaled = scaler.transform(X_test)
+            X_test_scaled = scaler.transform(X_test_comp)
         else:
-            X_test_scaled = X_test
+            X_test_scaled = X_test_comp
         y_pred = mdl.predict(X_test_scaled)
-        acc = accuracy_score(y_test, y_pred)
-        precision = precision_score(y_test, y_pred, zero_division=0)
-        recall = recall_score(y_test, y_pred, zero_division=0)
-        f1 = f1_score(y_test, y_pred, zero_division=0)
-        mcc = matthews_corrcoef(y_test, y_pred)
+        acc = accuracy_score(y_test_comp, y_pred)
+        precision = precision_score(y_test_comp, y_pred, zero_division=0)
+        recall = recall_score(y_test_comp, y_pred, zero_division=0)
+        f1 = f1_score(y_test_comp, y_pred, zero_division=0)
+        mcc = matthews_corrcoef(y_test_comp, y_pred)
         
         # AUC Score
         if hasattr(mdl, "predict_proba"):
             y_pred_proba = mdl.predict_proba(X_test_scaled)[:, 1]
-            auc = roc_auc_score(y_test, y_pred_proba)
+            auc = roc_auc_score(y_test_comp, y_pred_proba)
         else:
             auc = "N/A"
         
@@ -270,7 +311,7 @@ with tab2:
         st.pyplot(fig)
 
 # Tab 3: Data Exploration
-with tab3:
+with tab4:
     st.subheader("Explore the Dataset")
     
     st.markdown("### Dataset Overview")
