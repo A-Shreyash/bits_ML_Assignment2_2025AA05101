@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -12,7 +11,9 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     f1_score,
-    confusion_matrix
+    confusion_matrix,
+    roc_auc_score,
+    matthews_corrcoef
 )
 
 # Page Configuration
@@ -171,17 +172,29 @@ with tab1:
     precision = precision_score(y_test, y_pred, zero_division=0)
     recall = recall_score(y_test, y_pred, zero_division=0)
     f1 = f1_score(y_test, y_pred, zero_division=0)
+    mcc = matthews_corrcoef(y_test, y_pred)
+    
+    # AUC Score (only if model supports predict_proba)
+    if hasattr(model, "predict_proba"):
+        y_pred_proba = model.predict_proba(X_test_final)[:, 1]
+        auc = roc_auc_score(y_test, y_pred_proba)
+    else:
+        auc = "N/A"
     
     st.markdown("### Key Metrics")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
-        st.markdown(f'<div class="metric-card"><h3>Accuracy</h3><p>{acc:.4f}</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><h3>Accuracy</h3><p>{acc:.3f}</p></div>', unsafe_allow_html=True)
     with col2:
-        st.markdown(f'<div class="metric-card"><h3>Precision</h3><p>{precision:.4f}</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><h3>AUC Score</h3><p>{auc if auc == "N/A" else f"{auc:.3f}"}</p></div>', unsafe_allow_html=True)
     with col3:
-        st.markdown(f'<div class="metric-card"><h3>Recall</h3><p>{recall:.4f}</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><h3>Precision</h3><p>{precision:.3f}</p></div>', unsafe_allow_html=True)
     with col4:
-        st.markdown(f'<div class="metric-card"><h3>F1 Score</h3><p>{f1:.4f}</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><h3>Recall</h3><p>{recall:.3f}</p></div>', unsafe_allow_html=True)
+    with col5:
+        st.markdown(f'<div class="metric-card"><h3>F1 Score</h3><p>{f1:.3f}</p></div>', unsafe_allow_html=True)
+    with col6:
+        st.markdown(f'<div class="metric-card"><h3>MCC Score</h3><p>{mcc:.3f}</p></div>', unsafe_allow_html=True)
     
     st.markdown("### Confusion Matrix")
     cm = confusion_matrix(y_test, y_pred)
@@ -208,22 +221,47 @@ with tab2:
         precision = precision_score(y_test, y_pred, zero_division=0)
         recall = recall_score(y_test, y_pred, zero_division=0)
         f1 = f1_score(y_test, y_pred, zero_division=0)
+        mcc = matthews_corrcoef(y_test, y_pred)
+        
+        # AUC Score
+        if hasattr(mdl, "predict_proba"):
+            y_pred_proba = mdl.predict_proba(X_test_scaled)[:, 1]
+            auc = roc_auc_score(y_test, y_pred_proba)
+        else:
+            auc = "N/A"
+        
         results.append({
             "Model": name,
             "Accuracy": acc,
+            "AUC Score": auc,
             "Precision": precision,
             "Recall": recall,
-            "F1 Score": f1
+            "F1 Score": f1,
+            "MCC Score": mcc
         })
     results_df = pd.DataFrame(results)
-    st.dataframe(results_df.style.highlight_max(axis=0, color='#daa520'))
+    # Format numerical columns to 3 decimal places
+    st.dataframe(results_df.style.format({
+        "Accuracy": "{:.3f}",
+        "AUC Score": lambda x: "{:.3f}" if isinstance(x, (int, float)) else x,
+        "Precision": "{:.3f}",
+        "Recall": "{:.3f}",
+        "F1 Score": "{:.3f}",
+        "MCC Score": "{:.3f}"
+    }).highlight_max(axis=0, color='#daa520'))
     
-    metric_options = ["Accuracy", "Precision", "Recall", "F1 Score"]
+    metric_options = ["Accuracy", "AUC Score", "Precision", "Recall", "F1 Score", "MCC Score"]
     selected_metric = st.selectbox("Select Metric for Comparison", metric_options, key="metric_select")
     
     st.markdown(f"### {selected_metric} Comparison")
     fig, ax = plt.subplots(figsize=(4, 3))
-    sns.barplot(data=results_df, x="Model", y=selected_metric, ax=ax, palette="Oranges")
+    if selected_metric == "AUC Score":
+        # Filter out "N/A" for plotting
+        plot_df = results_df[results_df["AUC Score"] != "N/A"].copy()
+        plot_df["AUC Score"] = plot_df["AUC Score"].astype(float)
+        sns.barplot(data=plot_df, x="Model", y="AUC Score", ax=ax, palette="Oranges")
+    else:
+        sns.barplot(data=results_df, x="Model", y=selected_metric, ax=ax, palette="Oranges")
     ax.set_title(f"Model {selected_metric} Comparison")
     ax.set_ylabel(selected_metric)
     plt.xticks(rotation=45)
