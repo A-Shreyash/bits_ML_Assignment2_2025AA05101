@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -151,9 +152,6 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 X_test = X_test.reindex(columns=X_train.columns, fill_value=0)
 
-# Create processed test data for download
-test_df = pd.concat([X_test, y_test.rename(TARGET_COL)], axis=1)
-
 # Tabs
 tab1, tab2, tab3 = st.tabs(["📊 Model Evaluation", "🔍 Model Comparison", "📈 Data Exploration"])
 
@@ -264,15 +262,6 @@ with tab3:
             st.pyplot(fig)
     else:
         st.write("No numerical columns found for correlation.")
-    
-    st.markdown("### Download Processed Test Data")
-    st.download_button(
-        label="Download processed_test_data.csv",
-        data=test_df.to_csv(index=False),
-        file_name="processed_test_data.csv",
-        mime="text/csv",
-        key="download_test_data"
-    )
 
 # Footer
 st.markdown('<div class="footer">© 2026 Created by Shreyash Sompurkar - 2025AA05101</div>', unsafe_allow_html=True)
